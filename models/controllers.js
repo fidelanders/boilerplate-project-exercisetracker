@@ -1,159 +1,285 @@
+const mongoose = require('mongoose');
+const moment = require('moment')
+require('dotenv').config();
+
 const User = require('./user');
 const Exercise = require('./exercise');
-const { v4: uuidv4 } = require('uuid');
 
-///////////////////////
-    //  MIDDLEWARES  ////
-//////////////////////
+// Connect Mongo DB Atlas
+mongoose.connect(process.env.MONGODB_URI, {
+  useUnifiedTopology: true,
+  useNewUrlParser: true
+});
 
-let InputError = {"error": "Your input is not correct"}
 
-//takes: username
-//returs created user Object
-const create_new_user = (req, res, next) => {
-  let username = req.body.username
+/////////////////////////////////////////
+/* ROUTES - GET & POST requests */
+////////////////////////////////////////
 
-  if(username){
-    let newUUID = uuidv4();
+// PATH /api/users/ Requests
+// GET: Show the contents of the User model
+const getUsers = function(req, res) {
+  User.find({}, function(err, data) {
+    if (!err) {
+      return res.json(data);
+    }
+  });
+};
 
-    //creating user document
-    const newUser = new User({
-      _id: newUUID,
-      username: username
-    })
-  
-    //saving the user document
-    newUser.save((err,data)=>{
-      if(err) console.log(err);
-      if(data){
-        res.json({'username':data.username, '_id':data._id})
-      }
-    })
-  }else{
-    res.json(InputError)
+// POST: Store user into User model
+const createUser = (req, res) => {
+  // Get username input into form
+  const username = req.body.username;
+  console.log("username:", username);
+
+  // Check to see if the username has already been entered
+  User.findOne({ username: username }, (error, data) => {
+    if (error) {
+      res.send("Unknown userID");
+      return console.log(error);
+    }
+
+    if (!data) { // If username is not stored yet, create and save a User object
+      const newUser = new User({
+        username: username
+      });
+
+      // Save the user
+      newUser.save((error, data) => {
+        if (error) return console.log(error);
+        // Remove the key-value pair associated with the key __v
+        const reducedData = {
+          "username": data.username,
+          "_id": data._id
+        };
+        res.json(reducedData);
+        console.log(reducedData);
+      });
+    } else { // If username is already stored, send a message to the user
+      res.send(`Username ${username} already exists.`);
+      console.log(`Username ${username} already exists.`);
+    }
+  });
+};
+
+// POST: Store new exercise in the Exercise model 
+const addExercise = (req, res) => {
+  // Get data from form
+  const userId = req.body._id || req.params._id;
+  const inputDescription = req.body.description;
+  const inputDuration = req.body.duration;
+  const inputDate = req.body.date;
+
+  // Print statement for debugging
+  console.log(userId, inputDescription, inputDuration, inputDate);
+
+  // Make sure the user has entered in an id, a description, and a duration
+  // Set the date entered to now if the date is not entered
+  if (!userId) {
+    res.json("Path `userID` is required.");
+    return;
+  }
+  if (!inputDescription) {
+    res.json("Path `description` is required.");
+    return;
+  }
+  if (!inputDuration) {
+    res.json("Path `duration` is required.");
+    return;
   }
 
-}
+  // Check if user ID is in the User model
+  User.findById({ "_id": userId }, (error, data) => {
+    if (error) {
+      res.json("Invalid userID");
+      return console.log(error);
+    }
+    if (!data) {
+      res.json("Unknown userID");
+      return;
+    } else {
+      console.log(data);
+      const usernameMatch = data.username;
 
-//takes: id, duration, description, date(oprtional)
-//returns: created objects
-const create_new_exercise = (req, res, next) => {
-  let id = req.params._id
-  let date = req.body.date
-  let duration = req.body.duration
-  let description = req.body.description
-
-  User.findById({_id: id}, (err, data) =>{
-    if(err) console.log(err);
-    //user not found || found
-    if(!data){res.json({"error":"this userId doesn't exists."})}
-    else{
-      let nowDate = new Date()
-      if(date){
-        nowDate = new Date(date)
-      }
-
-      //ceating new exercise document
+      // Create an Exercise object
       const newExercise = new Exercise({
-        ownerId: _id,
-        description: description || "default description", //in case of not entering a description
-        duration: duration || 1, //in case of not entering a duration
-        date: nowDate
-      })
+        username: usernameMatch,
+        description: inputDescription,
+        duration: inputDuration
+      });
 
-      //saving the exercise document
-      newExercise.save((err, saved)=>{
-        if(err) {
-          console.log(err)
-          res.json({"error": "there was an error saving the exercise"})
-        }
-        if(saved){
-          res.json({
-            _id:data._id,
-            username:data.username, 
-            date:new Date(saved.date).toDateString(),
-            duration:saved.duration,
-            description:saved.description})
-        }
-      })
-    }
-  })
-}
-
-const get_users = (req, res, next)=>{
-    User.find({}, (err, data) =>{
-        if(err) console.log(err);
-        if(data){
-          res.json(data)
-        }
-    })
-}
-
-const get_log = (req, res, next)=>{
-    let from = req.query.from;
-    let to = req.query.to;
-    let limit = req.query.limit
-  
-    let id = req.params._id
-    
-    //if from exists then change it's format
-    if(from){
-      from = new Date(from)
-    }
-  
-    if(to){
-      to = new Date(to)
-    }
-  
-    //if user exists
-    User.findOne({_id: id}, (err, user)=>{
-      if(err) console.log(err)
-  
-      if(!user) res.json({'error': "this userId doesn't exists."})
-      else{
-        //find user Exercises
-        Exercise.find({ownerId: id, date: {"$gte": from || new Date('1450-1-1'), "$lt": to || new Date('2300-1-1')}}, (err, log)=>{
-          if(err) console.log(err)
-          if(log){
-            let formatedLog = log.map((v)=>({
-              description: v.description,
-              duration: v.duration,
-              date: v.date.toDateString()
-            }))
-            res.json({_id: user._id, username:user.username, count: log.length, log:formatedLog})
-          }
-          
-        }).limit(limit || 100)
+      // Set the date of the Exercise object if the date was entered
+      if (inputDate) {
+        newExercise.date = inputDate;
       }
-    })
-}
 
- /****************************************/
-  const get_alllogs = (req, res) => {
+      // Save the exercise
+      newExercise.save((error, data) => {
+        if (error) return console.log(error);
 
-  User.findById(req.params._id, (err, user) => {
-    if (err) {
-      console.log(err);
-      return res.send(err.message);
+        console.log(data);
+
+        // Create JSON object to be sent to the response
+        const exerciseObject = {
+          "_id": userId,
+          "username": data.username,
+          "date": data.date.toDateString(),
+          "duration": data.duration,
+          "description": data.description
+        };
+
+        // Send JSON object to the response
+        res.json(exerciseObject);
+
+      });
     }
-    if (!user) {
-      return res.send('Invalid user id');
-    }
-    user.log.sort((log1, log2) => log1.date.getTime() - log2.date.getTime());
-    let filteredLog = user.log.map((curr) => {
-      return {
-        description: curr.description,
-        duration: curr.duration,
-        date: curr.date.toDateString()
-      }
-    });
-    res.json({
-      username: user.username,
-      id: user._id,
-      count: filteredLog.length,
-      log: filteredLog
-    });
   });
-}
+};
 
-module.exports = {create_new_user, create_new_exercise, get_users, get_log, get_alllogs}
+// PATH /api/users/:_id/logs?[from][&to][&limit]
+const userLog = (req, res) => {
+
+  const id = req.body._id || req.params._id;
+  var fromDate = req.query.from;
+  var toDate = req.query.to;
+  var limit = req.query.limit;
+
+  console.log(id, fromDate, toDate, limit);
+
+  // Validate the query parameters
+  if (fromDate) {
+    fromDate = new Date(fromDate);
+    if (fromDate == "Invalid Date") {
+      res.json("Invalid Date Entered");
+      return;
+    }
+  }
+
+  if (toDate) {
+    toDate = new Date(toDate);
+    if (toDate == "Invalid Date") {
+      res.json("Invalid Date Entered");
+      return;
+    }
+  }
+
+  if (limit) {
+    limit = new Number(limit);
+    if (isNaN(limit)) {
+      res.json("Invalid Limit Entered");
+      return;
+    }
+  }
+
+  // Get the user's information
+  User.findOne({ "_id": id }, (error, data) => {
+    if (error) {
+      res.json("Invalid UserID");
+      return console.log(error);
+    }
+    if (!data) {
+      res.json("Invalid UserID");
+    } else {
+
+      // Initialize the object to be returned
+      const usernameFound = data.username;
+      var objToReturn = { "_id": id, "username": usernameFound };
+
+      // Initialize filters for the count() and find() methods
+      var findFilter = { "username": usernameFound };
+      var dateFilter = {};
+
+      // Add to and from keys to the object if available
+      // Add date limits to the date filter to be used in the find() method on the Exercise model
+      if (fromDate) {
+        objToReturn["from"] = fromDate.toDateString();
+        dateFilter["$gte"] = fromDate;
+        if (toDate) {
+          objToReturn["to"] = toDate.toDateString();
+          dateFilter["$lt"] = toDate;
+        } else {
+          dateFilter["$lt"] = Date.now();
+        }
+      }
+
+      if (toDate) {
+        objToReturn["to"] = toDate.toDateString();
+        dateFilter["$lt"] = toDate;
+        dateFilter["$gte"] = new Date("1960-01-01");
+      }
+
+      // Add dateFilter to findFilter if either date is provided
+      if (toDate || fromDate) {
+        findFilter.date = dateFilter;
+      }
+
+      // console.log(findFilter);
+      // console.log(dateFilter);
+
+      // Add the count entered or find the count between dates
+      Exercise.count(findFilter, (error, data) => {
+        if (error) {
+          res.json("Invalid Date Entered");
+          return console.log(error);
+        }
+        // Add the count key 
+        var count = data;
+        if (limit && limit < count) {
+          count = limit;
+        }
+        objToReturn["count"] = count;
+
+
+        // Find the exercises and add a log key linked to an array of exercises
+        Exercise.find(findFilter, (error, data) => {
+          if (error) return console.log(error);
+
+          // console.log(data);
+
+          var logArray = [];
+          var objectSubset = {};
+          var count = 0;
+
+          // Iterate through data array for description, duration, and date keys
+          data.forEach(function(val) {
+            count += 1;
+            if (!limit || count <= limit) {
+              objectSubset = {};
+              objectSubset.description = val.description;
+              objectSubset.duration = val.duration;
+              objectSubset.date = val.date.toDateString();
+              console.log(objectSubset);
+              logArray.push(objectSubset);
+            }
+          });
+
+          // Add the log array of objects to the object to return
+          objToReturn["log"] = logArray;
+
+          // Return the completed JSON object
+          res.json(objToReturn);
+          console.log(objToReturn);
+        });
+
+      });
+
+    }
+  });
+};
+
+// Display all of the exercises in the Mongo DB model titled Exercise
+const getExercise = (req, res) => {
+  Exercise.find({}, (error, data) => {
+    if (error) return console.log(error);
+    res.json(data);
+  })
+};
+
+module.exports = {
+    getUsers,
+    createUser,
+    addExercise,
+    userLog,
+    getExercise
+
+}
