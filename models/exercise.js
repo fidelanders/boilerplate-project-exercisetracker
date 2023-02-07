@@ -1,24 +1,27 @@
 const mongoose = require('mongoose');
 
-const exerciseSchema = new mongoose.Schema({
-    ownerId:{ //FK
-      type: String,
-      required: true
+const { Schema } = mongoose;
+
+const exerciseSchema = new Schema({
+  	userId: { 
+      type: String 
     },
-    description:{
-      type: String,
-      require: true
+    username: {
+        type: String,
+        required: true
+    },
+    description: {
+        type: String,
+        required: true
     },
     duration: {
-      type: Number,
-      require: true,
-      min: [1, 'Duration too high'],
+        type: Number,
+        required: true
     },
-    date:{
-      type: Date,
+    date: {
+        type: Date,
+        default: Date.now()
     }
-  })
+});
 
-const exerciseModel = mongoose.model('Exercise', exerciseSchema)
-
-module.exports = exerciseModel
+module.exports = mongoose.model('Exercise', exerciseSchema);
